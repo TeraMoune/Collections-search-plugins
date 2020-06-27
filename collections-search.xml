@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dleplugin>
+	<name>Collections search</name>
+	<description>Поиск подборок</description>
+	<icon></icon>
+	<version></version>
+	<dleversion>13</dleversion>
+	<versioncompare>greater</versioncompare>
+	<upgradeurl></upgradeurl>
+	<filedelete>1</filedelete>
+	<needplugin>Collections</needplugin>
+	<mnotice>0</mnotice>
+	<mysqlinstall><![CDATA[]]></mysqlinstall>
+	<mysqlupgrade><![CDATA[]]></mysqlupgrade>
+	<mysqlenable><![CDATA[]]></mysqlenable>
+	<mysqldisable><![CDATA[]]></mysqldisable>
+	<mysqldelete><![CDATA[]]></mysqldelete>
+	<phpinstall><![CDATA[]]></phpinstall>
+	<phpupgrade><![CDATA[]]></phpupgrade>
+	<phpenable><![CDATA[]]></phpenable>
+	<phpdisable><![CDATA[]]></phpdisable>
+	<phpdelete><![CDATA[]]></phpdelete>
+	<notice><![CDATA[https://github.com/TeraMoune/Collections-search-plugins]]></notice>
+	<file name="engine/ajax/search_collections.php">
+		<operation action="create">
+			<replacecode><![CDATA[<?php
+if(!defined('DATALIFEENGINE')) {
+	header( "HTTP/1.1 403 Forbidden" );
+	header ( 'Location: ../../' );
+	die( "Hacking attempt!" );
+}
+
+
+if ( !$config['allow_registration'] ) {
+	$dle_login_hash = sha1( SECURE_AUTH_KEY . $_IP );
+}
+
+if( $_REQUEST['user_hash'] == "" OR $_REQUEST['user_hash'] != $dle_login_hash ) {
+
+	echo $lang['sess_error'];
+	die();
+
+}
+
+require_once (DLEPlugins::Check(ENGINE_DIR . '/classes/templates.class.php'));
+$xfields = xfieldsload();
+
+function strip_data($text) {
+
+	$quotes = array ( "\x60", "\t", "\n", "\r", ".", ",", ";", ":", "&", "(", ")", "[", "]", "{", "}", "=", "*", "^", "%", "$", "<", ">", "+", "-" );
+	$goodquotes = array ("#", "'", '"' );
+	$repquotes = array ("\#", "\'", '\"' );
+	$text = stripslashes( $text );
+	$text = trim( strip_tags( $text ) );
+	$text = str_replace( $quotes, ' ', $text );
+	$text = str_replace( $goodquotes, $repquotes, $text );
+	
+	return $text;
+}
+
+$tpl = new dle_template( );
+$tpl->dir = ROOT_DIR . '/templates/' . $config['skin'];
+define( 'TEMPLATE_DIR', $tpl->dir );
+$PHP_SELF = $config['http_home_url'] . "index.php";
+
+$query = dle_substr( strip_data( $_POST['query'] ), 0, 90, $config['charset'] );
+
+$refer_uri = parse_url($_SERVER['HTTP_REFERER']);
+
+$c_id = false;
+
+if( preg_match( "#id=(\d+)#i", $refer_uri['query'], $match ) ) {
+	
+	$id = intval($match[1]);
+	
+	$collections_info = get_vars ( "collections" );
+	
+	if( $collections_info[$id]['news_ids'] ) {
+	
+		$collection_id = " AND collections regexp '([[:punct:]]|^)(" .$id. ")([[:punct:]]|$)' ";
+		$c_id = true;
+	
+	} elseif( $collections_info[$id]['current_tags'] OR $collections_info[$id]['current_xfields'] ) {
+		
+		if( $collections_info[$id]['current_tags'] ) {
+			
+			$collections_info[$id]['current_tags'] = explode(', ', $collections_info[$id]['current_tags']);		
+			//$collection_id = " AND tags regexp '[[:<:]](" . implode('|', $collections_info[$id]['current_tags']) . ")[[:>:]]' ";
+			$collection_id = " AND tags regexp '" . implode('|', $collections_info[$id]['current_tags']) . "' ";
+			
+		} elseif( $collections_info[$id]['current_xfields'] ) {
+			
+			$collections_info[$id]['current_xfields'] = explode(', ', $collections_info[$id]['current_xfields']);
+			//$collection_id = " AND xfields regexp '[[:<:]](" . implode('|', $collections_info[$id]['current_xfields']) . ")[[:>:]]' ";
+			$collection_id = " AND xfields regexp '" . implode('|', $collections_info[$id]['current_xfields']) . "' ";
+			
+		}
+
+		$c_id = true;
+		
+	}
+	
+}
+
+$arr = explode( ' ', $query );
+$query = array ();
+
+foreach ( $arr as $word ) {
+	if( $word ) $query[] = $word;
+}
+
+$query = implode( "%", $query );
+
+$query = $db->safesql( addslashes( $query ) );
+
+if( $query == "" ) die();
+
+$buffer = "";
+
+$tpl->load_template( 'collections_fsearch.tpl' );
+
+preg_match("#\\[collections-search\\](.+?)\\[/collections-search\\]#is", $tpl->copy_template, $matches_c);
+preg_match("#\\[news-search\\](.+?)\\[/news-search\\]#is", $tpl->copy_template, $matches_n);
+
+if( $matches_c[0] ) {
+
+$db->query("SELECT id, name, date, cover FROM " . PREFIX . "_news_collections WHERE name LIKE '%{$query}%' ORDER by date DESC LIMIT 5");
+
+if( $c_id ) $buffer .= "<span class=\"sep\">Подборки</span>";
+
+$found_c = false;
+
+$collections = array();
+if( $c_id AND $matches_n[0] ) $collections[] = "<span class=\"sep\">Подборки</span>";
+while( $row = $db->get_row() ) {
+	
+	$found_c = true;
+	
+	$row['date'] = strtotime( $row['date'] );
+
+	if( $config['allow_alt_url'] ) $full_link = $config['http_home_url'] . 'collections/' . $row['id'] . '-' . $row['alt_url'];
+	else $full_link = $config['http_home_url'] . '?do=collections&id=' . $row['id'];
+
+	$row['name'] = stripslashes($row['name']);
+
+	if( dle_strlen( $row['name'], $config['charset'] ) > 43 ) $name = dle_substr( $row['name'], 0, 43, $config['charset'] ) . " ...";
+	else $name = $row['name'];
+
+	$row['descr'] = trim (htmlspecialchars( strip_tags( stripslashes( str_replace( array("<br>", "<br />", "&nbsp;"), " ", $row['descr'] ) ) ), ENT_QUOTES, $config['charset'] ) );
+	
+	if( dle_strlen( $row['descr'], $config['charset'] ) > 150 ) $description = dle_substr( $row['descr'], 0, 150, $config['charset'] ) . " ...";
+	else $description = $row['descr'];
+
+	$description = str_replace('&amp;', '&', $description);
+	
+	if( $row['cover'] AND file_exists( ROOT_DIR . '/uploads/posts/' . $row['cover'] ) ) {
+
+		$cover_file = $config['http_home_url'] . 'uploads/posts/' . $row['cover'];
+		
+	} else $cover_file = '{THEME}/dleimages/no_image.jpg';	
+
+	$temp = $matches_c[1];
+	$temp = str_ireplace("{full_link}" ,$full_link, $temp);
+	$temp = str_ireplace("{name}", stripslashes( $name ), $temp);
+	$temp = str_ireplace("{description}", $description, $temp);	
+	$temp = str_ireplace("{cover}", $cover_file, $temp);	
+	$collections[] = $temp;
+
+}
+
+if( !$found_c ) $collections[] = "<span class=\"notfound\">Подборок не найдено</span>";
+if ( $matches_c[0] ) $tpl->copy_template = str_replace($matches_c[0], implode($collections), $tpl->copy_template);
+
+}
+
+if( $c_id ) {
+	
+	if( $matches_n ) {
+		
+	$news = array();
+	if( !$found_c ) $buffer .= "<span class=\"notfound\">Подборок не найдено</span>";
+	
+	$db->query("SELECT id, title, date, alt_name, category, short_story, full_story, xfields FROM " . PREFIX . "_post WHERE title LIKE '%{$query}%'{$collection_id}ORDER by date DESC LIMIT 5");
+	
+	$buffer .= "<span class=\"sep\">Новости</span>";
+	$news[] = "<span class=\"sep\">Новости</span>";
+	
+	$found_n = false;
+	
+	while( $row = $db->get_row() ) {
+
+			$found_n = true;
+	
+			$row['date'] = strtotime( $row['date'] );
+			$row['category'] = intval( $row['category'] );
+
+			if( $config['allow_alt_url'] ) {
+				
+				if( $config['seo_type'] == 1 OR $config['seo_type'] == 2 ) {
+					
+					if( $row['category'] and $config['seo_type'] == 2 ) {
+						
+						$full_link = $config['http_home_url'] . get_url( $row['category'] ) . "/" . $row['id'] . "-" . $row['alt_name'] . ".html";
+					
+					} else {
+						
+						$full_link = $config['http_home_url'] . $row['id'] . "-" . $row['alt_name'] . ".html";
+					
+					}
+				
+				} else {
+					
+					$full_link = $config['http_home_url'] . date( 'Y/m/d/', $row['date'] ) . $row['alt_name'] . ".html";
+				}
+			
+			} else $full_link = $config['http_home_url'] . "index.php?newsid=" . $row['id'];
+
+			$row['title'] = stripslashes($row['title']);
+
+			if( dle_strlen( $row['title'], $config['charset'] ) > 43 ) $title = dle_substr( $row['title'], 0, 43, $config['charset'] ) . " ...";
+			else $title = $row['title'];
+
+      		$sh = $row['short_story'];
+			$row['short_story'] = trim (htmlspecialchars( strip_tags( stripslashes( str_replace( array("<br>", "<br />", "&nbsp;"), " ", $row['short_story'] ) ) ), ENT_QUOTES, $config['charset'] ) );
+
+			if (stripos ( $row['short_story'], "[hide" ) !== false ) {
+				
+				$row['short_story'] = preg_replace_callback ( "#\[hide(.*?)\](.+?)\[/hide\]#is", 
+					function ($matches) use ($member_id, $user_group, $lang) {
+						
+						$matches[1] = str_replace(array("=", " "), "", $matches[1]);
+						$matches[2] = $matches[2];
+		
+						if( $matches[1] ) {
+							
+							$groups = explode( ',', $matches[1] );
+		
+							if( in_array( $member_id['user_group'], $groups ) OR $member_id['user_group'] == "1") {
+								return $matches[2];
+							} else return "";
+							
+						} else {
+							
+							if( $user_group[$member_id['user_group']]['allow_hide'] ) return $matches[2]; else return "";
+							
+						}
+		
+				}, $row['short_story'] );
+			}
+
+			if( dle_strlen( $row['short_story'], $config['charset'] ) > 150 ) $description = dle_substr( $row['short_story'], 0, 150, $config['charset'] ) . " ...";
+			else $description = $row['short_story'];
+
+			$description = str_replace('&amp;', '&', $description);
+
+			$description = preg_replace( "'\[attachment=(.*?)\]'si", "", $description );
+      
+            if( count($xfields) ) {
+
+                $xfieldsdata = xfieldsdataload( $row['xfields'] );
+
+                $isset_poster = false;
+
+                foreach ( $xfields as $value ) {
+
+                    $preg_safe_name = preg_quote( $value[0], "'" );
+
+                    if( $value[3] == "image" AND $xfieldsdata[$value[0]] ) {
+
+                        $temp_array = explode('|', $xfieldsdata[$value[0]]);
+
+                        if (count($temp_array) > 1 ){
+
+                            $temp_alt = $temp_array[0];
+                            $temp_value = $temp_array[1];
+
+                        } else {
+
+                            $temp_alt = '';
+                            $temp_value = $temp_array[0];
+
+                        }
+
+                        $path_parts = @pathinfo($temp_value);
+
+                        if( $value[12] AND file_exists(ROOT_DIR . "/uploads/posts/" .$path_parts['dirname']."/thumbs/".$path_parts['basename']) ) {
+                            $thumb_url = $config['http_home_url'] . "uploads/posts/" . $path_parts['dirname']."/thumbs/".$path_parts['basename'];
+                            $img_url = $config['http_home_url'] . "uploads/posts/" . $path_parts['dirname']."/".$path_parts['basename'];
+                        } else {
+                            $img_url = 	$config['http_home_url'] . "uploads/posts/" . $path_parts['dirname']."/".$path_parts['basename'];
+                            $thumb_url = "";
+                        }
+
+                        if($thumb_url) {
+                            $poster_url = $thumb_url;
+                        } else $poster_url = $img_url;
+
+                        $isset_poster = true;	
+
+                    } else if( $value[3] == "image" AND $xfieldsdata[$value[0]] == '' ) {
+
+                        $sh = stripslashes($sh);
+                        $row['full_story'] = stripslashes($row['full_story']);
+                        $images = array();
+                        preg_match_all('/(img|src)=("|\')[^"\'>]+/i', $sh.$row['full_story'], $media);
+                        $data=preg_replace('/(img|src)("|\'|="|=\')(.*)/i',"$3",$media[0]);
+                        $data = array_unique($data);
+
+                        foreach( $data as $url ) {
+
+                            $info = pathinfo($url);
+                            if ( isset($info['extension']) ) {
+
+                                if ($info['filename'] == "spoiler-plus" OR $info['filename'] == "spoiler-minus" OR strpos($info['dirname'], 'engine/data/emoticons') !== false) continue;
+                                $info['extension'] = strtolower($info['extension']);
+                                if (($info['extension'] == 'jpg') || ($info['extension'] == 'jpeg') || ($info['extension'] == 'gif') || ($info['extension'] == 'png')) array_push($images, $url);
+
+                            }
+                        }
+
+                        if( !count($images) ) $poster_url = $config['http_home_url'] . 'templates/' . $config['skin'] . "/dleimages/no_image.jpg";
+                        else $poster_url = $images[0];
+                        unset($images);
+
+                        $isset_poster = true;
+
+                    }
+
+                }
+
+                if( !$isset_poster ) {
+
+                    $sh = stripslashes($sh);
+                    $row['full_story'] = stripslashes($row['full_story']);
+                    $images = array();
+                    preg_match_all('/(img|src)=("|\')[^"\'>]+/i', $sh.$row['full_story'], $media);
+                    $data=preg_replace('/(img|src)("|\'|="|=\')(.*)/i',"$3",$media[0]);
+                    $data = array_unique($data);
+
+                    foreach( $data as $url ) {
+
+                        $info = pathinfo($url);
+                        if ( isset($info['extension']) ) {
+
+                            if ($info['filename'] == "spoiler-plus" OR $info['filename'] == "spoiler-minus" OR strpos($info['dirname'], 'engine/data/emoticons') !== false) continue;
+                            $info['extension'] = strtolower($info['extension']);
+                            if (($info['extension'] == 'jpg') || ($info['extension'] == 'jpeg') || ($info['extension'] == 'gif') || ($info['extension'] == 'png')) array_push($images, $url);
+
+                        }
+                    }
+
+                    if( !count($images) ) $poster_url = $config['http_home_url'] . 'templates/' . $config['skin'] . "/dleimages/no_image.jpg";
+                    else $poster_url = $images[0];	
+
+                }      
+
+            } else {
+
+                $sh = stripslashes($sh);
+                $row['full_story'] = stripslashes($row['full_story']);
+                $images = array();
+                preg_match_all('/(img|src)=("|\')[^"\'>]+/i', $sh.$row['full_story'], $media);
+                $data=preg_replace('/(img|src)("|\'|="|=\')(.*)/i',"$3",$media[0]);
+                $data = array_unique($data);
+
+                foreach( $data as $url ) {
+
+                    $info = pathinfo($url);
+                    if ( isset($info['extension']) ) {
+
+                        if ($info['filename'] == "spoiler-plus" OR $info['filename'] == "spoiler-minus" OR strpos($info['dirname'], 'engine/data/emoticons') !== false) continue;
+                        $info['extension'] = strtolower($info['extension']);
+                        if (($info['extension'] == 'jpg') || ($info['extension'] == 'jpeg') || ($info['extension'] == 'gif') || ($info['extension'] == 'png')) array_push($images, $url);
+
+                    }
+                }
+
+                if( !count($images) ) $poster_url = $config['http_home_url'] . 'templates/' . $config['skin'] . "/dleimages/no_image.jpg";
+                else $poster_url = $images[0];	
+
+            }      
+			
+			$temp = $matches_n[1];
+			$temp = str_ireplace("{full_link}" ,$full_link, $temp);
+			$temp = str_ireplace("{name}", stripslashes( $title ), $temp);
+			$temp = str_ireplace("{description}", $description, $temp);
+      		$temp = str_ireplace("{cover}", $poster_url, $temp);
+			$news[] = $temp;			
+
+	}
+      
+	if( !$found_n ) $news[] = "<span class=\"notfound\">Новостей в подборке не найдено</span>";
+	if ( $matches_n[0] ) $tpl->copy_template = str_replace($matches_n[0], implode($news), $tpl->copy_template);
+	
+	}
+	
+} else {
+	
+	if ( $matches_n[0] ) $tpl->copy_template = str_replace($matches_n[0], "", $tpl->copy_template);
+	
+}
+
+$tpl->compile( 'buffer' );
+
+$tpl->result['buffer'] = str_replace( '{THEME}', $config['http_home_url'] . 'templates/' . $config['skin'], $tpl->result['buffer'] );
+echo $tpl->result['buffer'];
+
+?>]]></replacecode>
+		</operation>
+	</file>
+	<file name="engine/modules/main.php">
+		<operation action="before">
+			<searchcode><![CDATA[if (strpos ( $tpl->result['content'], "<pre" ) !== false) {]]></searchcode>
+			<replacecode><![CDATA[if($do == 'collections' ) {
+
+	$ajax .= <<<HTML
+var dle_search_c_delay   = false;
+var dle_search_c_value   = '';
+HTML;
+
+	$onload_scripts[] = "FastSearchCollections();";
+
+}]]></replacecode>
+		</operation>
+	</file>
+</dleplugin>
