@@ -39,6 +39,30 @@ function FastSearchCollections() {
 	
 	});
 };
+
+function dle_do_search_collections( inputString ) {
+	
+	var req_href = location.href;
+	var result = req_href.match(/&id=(\d+)/);
+	
+	clearInterval(dle_search_c_delay);
+
+	$('#searchsuggestions_c').remove();
+
+	$("body").append("<div id='searchsuggestions_c' style='display:none'></div>");
+
+	$.post(dle_root + "engine/ajax/controller.php?mod=search_collections", {query: ""+inputString+"", collections: (result ? result[1] : ''), user_hash: dle_login_hash}, function(data) {
+			$('#searchsuggestions_c').html(data).fadeIn().css({'position' : 'absolute', top:0, left:0, width: $('.quicksearch_c').width()+'px'}).position({
+				my: "left top",
+				at: "left bottom",
+				of: "#story_c",
+				collision: "fit flip"
+			});
+		});
+
+	dle_search_c_value = inputString;
+
+};
 ```
 **Разметка поля для ввода поисковых запросов**
 ```HTML
