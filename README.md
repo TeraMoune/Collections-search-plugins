@@ -70,12 +70,3 @@ function dle_do_search_collections( inputString ) {
 			<input id="story_c" class="tokenfield form-control" placeholder="Поиск..." name="story" value="" type="search">
 	</div>
 ```
-
-### На печеньки...
-> ЮMoney: 4100115063692304
-> 
-> Qiwi nickname: TERAMOUNE
-> 
-> Wmz: Z990082286464
-> 
-> Wmr: R425445633105
